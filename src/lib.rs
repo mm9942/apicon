@@ -128,8 +128,39 @@ pub struct LBBackend {
     pub sni: Option<String>,
 }
 
+#[derive(Deserialize, Clone, Default)]
+pub struct GatewayConfig {
+    #[serde(default)]
+    pub listener: Option<String>,
+    #[serde(default)]
+    pub cert: Option<PathBuf>,
+    #[serde(default)]
+    pub key: Option<PathBuf>,
+    #[serde(default, rename = "ca_root")]
+    pub ca_root: Option<PathBuf>,
+    #[serde(default, rename = "client_ca")]
+    pub client_ca: Option<PathBuf>,
+    #[serde(default)]
+    pub require_client_cert: bool,
+    #[serde(default, rename = "allow_origin")]
+    pub allow_origin: Vec<String>,
+    #[serde(default, rename = "lb_backends")]
+    pub lb_backends: Vec<LBBackend>,
+    #[serde(default)]
+    pub endpoint: Vec<Endpoint>,
+    #[serde(default)]
+    pub round_robin: bool,
+    #[serde(default)]
+    pub client_bind_to_ipv4: Vec<String>,
+    #[serde(default)]
+    pub client_bind_to_ipv6: Vec<String>,
+}
+
 #[derive(Deserialize, Default)]
 pub struct FileConfig {
+    #[serde(default)]
+    pub gateways: Vec<GatewayConfig>,
+
     #[serde(default)]
     pub listener: Option<String>,
     #[serde(default)]

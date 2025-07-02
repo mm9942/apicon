@@ -1,30 +1,27 @@
+ca_root = "/path/ca.pem"
+
+[[gateway]]
 listener = "[::]:443"
 cert = "/path/fullchain.pem"
 key  = "/path/privkey.pem"
-ca_root = "/path/ca.pem"
 allow_origin = ["https://example.com"]
-round_robin = true
-client_bind_to_ipv4 = []
-client_bind_to_ipv6 = []
 
-[[lb_backends]]
-addr = "127.0.0.1:443"
-sni = "m.mm29942.com"
+  [[gateway.lb_backends]]
+  addr = "127.0.0.1:443"
+  sni = "m.mm29942.com"
 
-[[endpoint]]
-prefix = "/lead"
-addr = "127.0.0.1:8000"
-tls = false
-sni = "m.mm29942.com"
+  [[gateway.endpoint]]
+  prefix = "/lead"
+  addr = "127.0.0.1:8000"
+  tls = false
 
-[[endpoint]]
-prefix = "/leads"
-addr = "127.0.0.1:6443"
-tls = true
-sni = "m.mm29942.com"
+[[gateway]]
+listener = "[::]:8443"
+cert = "/path/second/fullchain.pem"
+key  = "/path/second/privkey.pem"
+allow_origin = ["https://other.com"]
 
-[[endpoint]]
-prefix = "/support"
-addr = "127.0.0.1:9443"
-tls = true
-sni = "m.mm29942.com"
+  [[gateway.endpoint]]
+  prefix = "/api"
+  addr = "127.0.0.1:5000"
+  tls = false

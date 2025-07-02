@@ -16,20 +16,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cfg = load_config(&cli.config)?;
 
-    let cert = cfg.cert.unwrap_or_else(|| cli.cert.to_owned());
-    let key = cfg.key.unwrap_or_else(|| cli.key.to_owned());
-    let ca_root = cfg.ca_root.or(cli.ca_root.clone());
-    let client_ca = cfg.client_ca.or(cli.client_ca.clone());
-    let require_client_cert = cfg.require_client_cert || cli.require_client_cert;
-    let origins = if !cfg.allow_origin.is_empty() { cfg.allow_origin.clone() } else { cli.allow_origin.clone() };
-    let listener = cfg
-        .listener
-        .unwrap_or_else(|| "[::]:443".to_owned());
-    let endpoints = cfg.endpoint.clone();
-    let lb_backends = if !cfg.lb_backends.is_empty() {
-        cfg.lb_backends.clone()
+    let gateways_cfg = if cfg.gateways.is_empty() {
+        vec![GatewayConfig {
+            listener: cfg.listener.clone(),
+            cert: cfg.cert.clone(),
+            key: cfg.key.clone(),
+            ca_root: cfg.ca_root.clone(),
+            client_ca: cfg.client_ca.clone(),
+            require_client_cert: cfg.require_client_cert,
+            allow_origin: cfg.allow_origin.clone(),
+            lb_backends: cfg.lb_backends.clone(),
+            endpoint: cfg.endpoint.clone(),
+            round_robin: cfg.round_robin,
+            client_bind_to_ipv4: cfg.client_bind_to_ipv4.clone(),
+            client_bind_to_ipv6: cfg.client_bind_to_ipv6.clone(),
+        }]
     } else {
-        vec![LBBackend { addr: "127.0.0.1:443".into(), sni: Some("localhost".into()) }]
+        cfg.gateways.clone()
     };
 
     if let Some(Commands::Service { start, restart, stop, status, names, workingdir }) = &cli.command {
@@ -51,25 +54,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => { eprintln!("pid-file: {e}"); std::process::exit(1); }
     };
 
-    let mut sc = ServerConf::default();
-    sc.daemon    = cli.daemon;
-    sc.threads   = cli.threads;
-    sc.pid_file  = cli.pid.display().to_string();
-    sc.ca_file   = ca_root.as_ref().map(|p| p.display().to_string());
-    sc.max_retries               = 10;
-    sc.upstream_debug_ssl_keylog = true;
+    let mut gateways = Vec::new();
+    for g in gateways_cfg {
+        let cert = g.cert.clone().unwrap_or_else(|| cli.cert.to_owned());
+        let key = g.key.clone().unwrap_or_else(|| cli.key.to_owned());
+        let ca_root = g.ca_root.clone().or(cli.ca_root.clone());
+        let client_ca = g.client_ca.clone().or(cli.client_ca.clone());
+        let require_client_cert = g.require_client_cert || cli.require_client_cert;
+        let origins = if !g.allow_origin.is_empty() { g.allow_origin.clone() } else { cli.allow_origin.clone() };
+        let listener = g.listener.clone().unwrap_or_else(|| "[::]:443".to_owned());
+        let endpoints = g.endpoint.clone();
+        let lb_backends = if !g.lb_backends.is_empty() {
+            g.lb_backends.clone()
+        } else {
+            vec![LBBackend { addr: "127.0.0.1:443".into(), sni: Some("localhost".into()) }]
+        };
 
-    let gw = Gateway::new(
-        sc,
-        &listener,
-        &cert,
-        &key,
-        client_ca,
-        require_client_cert,
-        origins,
-        endpoints,
-        lb_backends,
-    )?;
+        let mut sc = ServerConf::default();
+        sc.daemon    = cli.daemon;
+        sc.threads   = cli.threads;
+        sc.pid_file  = cli.pid.display().to_string();
+        sc.ca_file   = ca_root.as_ref().map(|p| p.display().to_string());
+        sc.client_bind_to_ipv4 = g.client_bind_to_ipv4.clone();
+        sc.client_bind_to_ipv6 = g.client_bind_to_ipv6.clone();
+        sc.max_retries               = 10;
+        sc.upstream_debug_ssl_keylog = true;
+
+        let gw = Gateway::new(
+            sc,
+            &listener,
+            &cert,
+            &key,
+            client_ca.clone(),
+            require_client_cert,
+            origins,
+            endpoints,
+            lb_backends,
+        )?;
+        gateways.push(gw);
+    }
 
     if let Err(e) = write_pid(&mut pid_handle) {
         eprintln!("pid-file write: {e}");
@@ -87,7 +110,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     info!(target="startup", "Pingora bootstrapped");
-    gw.run();
+    let handles: Vec<_> = gateways.into_iter()
+        .map(|gw| std::thread::spawn(move || gw.run()))
+        .collect();
+    for h in handles {
+        let _ = h.join();
+    }
     #[allow(unreachable_code)]
     Ok(())
 }

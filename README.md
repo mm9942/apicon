@@ -12,6 +12,7 @@ Rust-based HTTP proxy gateway built on [Pingora](https://crates.io/crates/pingor
   * **TLS settings**: specify cert (`-c, --cert`), key (`-k, --key`), optional CA root (`--ca-root`).
   * **Logging**: `-l, --log <level> [file]` sets tracing level and optional log file; `--json` emits JSON logs.
   * **Endpoint config**: load upstream mapping from a TOML file via `--config`.
+  * **Multiple gateways** via repeated `[[gateway]]` sections in the config.
 
 * **HTTP Proxy service**:
 
@@ -109,28 +110,31 @@ Generates a minimal CA along with server and client certificates for testing mut
 
 ### Example `apicon.toml`
 
+The configuration may define multiple `[[gateway]]` sections to run several
+listeners at once.
+
 ```toml
+ca_root = "/path/ca.pem"
+
+[[gateway]]
 listener = "[::]:443"
 cert = "/path/fullchain.pem"
 key  = "/path/privkey.pem"
-ca_root = "/path/ca.pem"
-allow_origin = ["https://example.com"]
 
-[[lb_backends]]
-addr = "127.0.0.1:443"
-sni = "m.mm29942.com"
+  [[gateway.endpoint]]
+  prefix = "/leads"
+  addr = "127.0.0.1:6443"
+  tls = true
 
-[[endpoint]]
-prefix = "/leads"
-addr = "127.0.0.1:6443"
-tls = true
-sni = "m.mm29942.com"
+[[gateway]]
+listener = "[::]:8443"
+cert = "/path/second/fullchain.pem"
+key  = "/path/second/privkey.pem"
 
-[[endpoint]]
-prefix = "/support"
-addr = "127.0.0.1:9443"
-tls = true
-sni = "m.mm29942.com"
+  [[gateway.endpoint]]
+  prefix = "/api"
+  addr = "127.0.0.1:5000"
+  tls = false
 ```
 
 ## Module Overview
