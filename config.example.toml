@@ -1,0 +1,39 @@
+ca_root = "/path/ca.pem"
+
+[[gateway]]
+listener = "[::]:443"
+cert = "/path/fullchain.pem"
+key  = "/path/privkey.pem"
+allow_headers = ["Content-Type", "Authorization"]
+sni = "example.com"
+allow_origin = ["https://example.com"]
+
+  [[gateway.lb_backends]]
+  addr = "127.0.0.1:443"
+  sni = "m.mm29942.com"
+
+  [[gateway.endpoint]]
+  prefix = "/lead"
+  addr = "127.0.0.1:8000"
+  tls = false
+
+  [gateway.web]
+  listener = "[::]:8080"
+  dir = "/srv/www/site1"
+
+[[gateway]]
+listener = "[::]:8443"
+cert = "/path/second/fullchain.pem"
+key  = "/path/second/privkey.pem"
+allow_headers = ["Content-Type", "Authorization"]
+sni = "other.com"
+allow_origin = ["https://other.com"]
+
+  [[gateway.endpoint]]
+  prefix = "/api"
+  addr = "127.0.0.1:5000"
+  tls = false
+
+  [gateway.web]
+  listener = "[::]:8081"
+  dir = "/srv/www/site2"
