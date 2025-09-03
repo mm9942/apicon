@@ -17,8 +17,8 @@
 //! `impl From<io::Error> for Box<pingora::Error>`.  This revision removes those
 //! impls and instead offers an explicit helper.
 
-use std::{error::Error, fmt, io, sync::Arc};
 use pingora::{Error as PgErr, ErrorType};
+use std::{error::Error, fmt, io, sync::Arc};
 
 /* ---------- ProxErr definition ---------- */
 #[derive(Debug)]
@@ -28,6 +28,7 @@ pub enum ProxErr {
     NoAddress,
     Pingora(PgErr),
     Transport(String),
+    Http(String),
     Other(String),
 }
 
@@ -35,12 +36,13 @@ pub enum ProxErr {
 impl fmt::Display for ProxErr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ProxErr::Io(e)            => write!(f, "I/O: {e}"),
-            ProxErr::AddrResolve(s)   => write!(f, "address resolution: {s}"),
-            ProxErr::NoAddress        => write!(f, "resolved 0 addresses"),
-            ProxErr::Pingora(e)       => write!(f, "pingora: {e}"),
-            ProxErr::Transport(s)     => write!(f, "transport: {s}"),
-            ProxErr::Other(s)         => write!(f, "{s}"),
+            ProxErr::Io(e) => write!(f, "I/O: {e}"),
+            ProxErr::AddrResolve(s) => write!(f, "address resolution: {s}"),
+            ProxErr::NoAddress => write!(f, "resolved 0 addresses"),
+            ProxErr::Pingora(e) => write!(f, "pingora: {e}"),
+            ProxErr::Transport(s) => write!(f, "transport: {s}"),
+            ProxErr::Http(s) => write!(f, "http: {s}"),
+            ProxErr::Other(s) => write!(f, "{s}"),
         }
     }
 }
