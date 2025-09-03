@@ -1,5 +1,7 @@
 # apicon
 
+*Version 0.2.0*
+
 Rust-based HTTP proxy gateway built on [Pingora](https://crates.io/crates/pingora), offering CORS handling, TLS termination, load‐balanced upstream routing, and secure privilege dropping.
 
 ## Features
@@ -12,7 +14,6 @@ Rust-based HTTP proxy gateway built on [Pingora](https://crates.io/crates/pingor
   * **TLS settings**: specify cert (`-c, --cert`), key (`-k, --key`), optional CA root (`--ca-root`).
   * **Logging**: `-l, --log <level> [file]` sets tracing level and optional log file; `--json` emits JSON logs.
   * **Endpoint config**: load upstream mapping from a TOML file via `--config`.
-  * **Multiple gateways** via repeated `[[gateway]]` sections in the config.
 
 * **HTTP Proxy service**:
 
@@ -23,6 +24,7 @@ Rust-based HTTP proxy gateway built on [Pingora](https://crates.io/crates/pingor
   * Backend selection based on request path or round‑robin over a pool.
   * Each backend may specify an SNI hostname in `apicon.toml`.
   * Outbound connections bind to the listener's address family for IPv4/IPv6.
+  * Optional per-endpoint connection and read timeouts.
 
 * **TLS termination**:
 
@@ -36,6 +38,13 @@ Rust-based HTTP proxy gateway built on [Pingora](https://crates.io/crates/pingor
   * Local `ProxErr` enum wrapping I/O, DNS resolution, Pingora errors, transport errors, and plain strings.
   * Conversion helpers to `Box<pingora::Error>` for trait compatibility (`into_pg`, `to_pg_error`).
   * Alias `ProxResult<T>` for concise error returns.
+
+* **Advanced capabilities**:
+
+  * **OCSP stapling** to speed up TLS handshakes and improve certificate validation.
+  * **EWMA load balancing** with connection pooling for smoother upstream routing.
+  * Built-in **telemetry metrics** for monitoring runtime behavior.
+  * Enhanced handshake logs indicate OCSP stapling and session ticket issuance/resumption.
 
 ## Installation
 
@@ -110,31 +119,70 @@ Generates a minimal CA along with server and client certificates for testing mut
 
 ### Example `apicon.toml`
 
-The configuration may define multiple `[[gateway]]` sections to run several
-listeners at once.
-
 ```toml
-ca_root = "/path/ca.pem"
-
-[[gateway]]
 listener = "[::]:443"
 cert = "/path/fullchain.pem"
 key  = "/path/privkey.pem"
+ca_root = "/path/ca.pem"
+allow_origin = ["https://example.com"]
+base_prefix = "/api"
+prepend_base_prefix = true
 
-  [[gateway.endpoint]]
-  prefix = "/leads"
-  addr = "127.0.0.1:6443"
-  tls = true
+[[lb_backends]]
+addr = "127.0.0.1:443"
+sni = "m.mm29942.com"
 
-[[gateway]]
-listener = "[::]:8443"
-cert = "/path/second/fullchain.pem"
-key  = "/path/second/privkey.pem"
+[[endpoint]]
+prefix = "leads"  # resolved as /api/leads
+addr = "127.0.0.1:6443"
+tls = true
+sni = "m.mm29942.com"
 
-  [[gateway.endpoint]]
-  prefix = "/api"
-  addr = "127.0.0.1:5000"
-  tls = false
+[[endpoint]]
+prefix = "/support"  # absolute path
+addr = "127.0.0.1:9443"
+tls = true
+sni = "m.mm29942.com"
+```
+
+When `prepend_base_prefix` is enabled, endpoint prefixes that do not start with
+`/` are treated as relative to `base_prefix`. Prefixes beginning with `/` remain
+absolute.
+
+## Metrics configuration
+
+Enable a Prometheus metrics endpoint by adding a `[metrics]` table to `apicon.toml`:
+
+```toml
+[metrics]
+addr = "127.0.0.1:9100"
+# path defaults to "/metrics"
+```
+
+When present, a separate HTTP server publishes runtime metrics at the configured address and path.
+
+## sysapicon
+
+`sysapicon` is a companion controller that manages the `apicon` systemd
+service. It wraps common `systemctl` operations and reports structured logs via
+[`tracing`](https://crates.io/crates/tracing). Compile the Rust binary once and
+place it in your `PATH`:
+
+```bash
+cargo install --path sysapicon
+```
+
+```bash
+# enable and start apicon
+sysapicon --start
+# disable and stop apicon
+sysapicon --stop
+# restart the service
+sysapicon --restart
+# reload unit files and restart
+sysapicon --reload
+# stream structured logs from journald
+sysapicon --log
 ```
 
 ## Module Overview
@@ -145,7 +193,7 @@ key  = "/path/second/privkey.pem"
 * **Service file generator**: `create_service` writes `/etc/systemd/system/<name>.service` for each configured unit.
 * **Privilege resolution**: `resolve_ids` maps user/group names to UID/GID using `users` crate.
 * **CORS origin configuration** via the TOML config or `--allow-origin` flags.
-* **Logging**: `init_tracing(level, json, file)` configures `tracing_subscriber` with optional file output.
+* **Logging**: `init_tracing(level, json, file)` configures `tracing_subscriber`.
 * **Config loading**: `load_config` parses endpoint mappings from a TOML file.
 * **Proxy service bootstrap**:
 
@@ -187,6 +235,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter","fmt","json"] }
 ```
 
 ## Development & Testing
+Run `cargo clippy -- -D warnings` after making changes to keep the codebase
+lint-free and consistent with project conventions.
 
 ```bash
 # Build release
@@ -197,3 +247,24 @@ cargo test
 cargo fmt -- --check
 cargo clippy -- -D warnings
 ```
+
+## Memory Allocator Options
+
+Enable alternative global allocators at build time:
+
+```bash
+cargo build --features jemalloc
+cargo build --features mimalloc
+```
+
+Only one allocator feature can be enabled; without either feature the system allocator is used.
+
+### Benchmark
+
+Latency for allocating a 1 KiB vector (`criterion`):
+
+| allocator | median time |
+|-----------|-------------|
+| system    | 705 ns |
+| jemalloc  | 675 ns |
+| mimalloc  | 678 ns |
